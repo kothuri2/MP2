@@ -1,6 +1,7 @@
 import socket
 import sys
 import time
+import pickle
 from threading import Thread, Lock
 
 go = 1
@@ -52,15 +53,30 @@ def read_client(s):
         while go == 0: # Wait until the previous request is acknowledged
             time.sleep(1)
         message_split = message.split()
-        send_message = -1
+        data_serialized = -1
         if(message_split[0] == "get"):
-            send_message = "g" + message_split[1]
+            message_object = 
+            {
+                'method' : "get",
+                'var' : message_split[1]
+            }
+            data_serialized = pickle.dumps(message_object, -1)
 
         elif(message_split[0] == "put"):
-            send_message = "p" + message_split[1] + message_split[2]
+            message_object = 
+            {
+                'method' : "put",
+                'var' : message_split[1]
+                'value' : message_split[2]
+            }
+            data_serialized = pickle.dumps(message_object, -1)
 
         elif(message_split[0] == "dump"):
-            send_message = "d"
+            message_object = 
+            {
+                'method' : "dump",
+            }
+            data_serialized = pickle.dumps(message_object, -1)
 
         elif(message_split[0] == "delay"):
             time.sleep(float(message_split[1])/1000.0)
@@ -68,15 +84,15 @@ def read_client(s):
         else:
             print "invalid message"
 
-        if(send_message != -1):
-            s.send(send_message)
+        if(data_serialized != -1):
+            s.send(data_serialized)
             go = 0
 
 def read_server(s):
     while True:
         buffer = s.recv(128)
         if(buffer == "a"):
-            print "Acknowledged" # Acknowledgesw dumps and puts
+            print "Acknowledged" # Acknowledges dumps and puts
         else:
             print "Value = " + buffer # Prints the value after a get operation was sent
         go = 1
@@ -90,14 +106,14 @@ if __name__ == "__main__":
 
 '''
 LINEARIZABILITY (from the view of a server):
-client connects to server replica
-server replica creates a thread to listen on from that client and gives that thread an id (1)
-user inputs put x 3
-client 1 sends px3 to server replica, id = 2
-client 1 blocks waiting for acknowledgement
+client connects to server replica (done)
+server replica creates a thread to listen on from that client and gives that thread an id (1) (done)
+user inputs put x 3 (done)
+client 1 sends px3 to server replica, id = 2 (done)
+client 1 blocks waiting for acknowledgement (done)
 server receives px3 and stores 1px3 in a list
-server replica sends m2px3 to sequencer
-sequencer stores a tuple of (m2px3,# of replica servers) in a list and multicasts mpx3 to all server replicas
+server replica sends 2px3 to sequencer
+sequencer stores a tuple of (2px3, # of replica servers) in a list and multicasts mpx3 to all server replicas
 server replica receives mpx3 and changes x to 3 and sends apx3 to sequencer
 sequencer waits till all apx3 are received (second value in tuple is 0) and then removes m2px3 from the list
 sequencer sends apx3 to server replica, id = 2

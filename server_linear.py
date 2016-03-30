@@ -6,9 +6,11 @@ import random
 import mutex
 import pickle
 import Queue as Q
+import sequencer
 from threading import Lock, Thread
 
 value_dict = {}
+client_requests = []
 
 def main(argv):
 	parsed_file = parse_file(argv[0])
@@ -17,8 +19,10 @@ def main(argv):
 	max_delay = float(parsed_file[2]/1000)
 	found_process = -1
 
-	#START SEQUENCER PROCESS
 	#CREATE SOCKET TO SEQUENCER
+	sequencer_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+	sequencer_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+	sequencer_socket.connect((127.0.0.1, int(6000)))
 
 	for process in processes:
 		if(argv[1] in process):
@@ -29,7 +33,7 @@ def main(argv):
 
 	try:
 		#server and client
-		t3 = Thread(target=create_server, args = (min_delay, max_delay, processes, found_process[1], int(found_process[2]), found_process[0], len(processes)))
+		t3 = Thread(target=create_server, args = (min_delay, max_delay, processes, found_process[1], int(found_process[2]), found_process[0], len(processes), sequencer_socket))
 		t3.daemon = True
 		t3.start()
 
@@ -61,7 +65,7 @@ def parse_file(file_name):
 '''
 Accepts front-end client connections
 '''
-def create_server(min_delay, max_delay, processes, host, port, process_id, num_processes):
+def create_server(min_delay, max_delay, processes, host, port, process_id, num_processes, sequencer_socket):
 	client_connections = []
 	#print('Creating server for ' + id)
 
@@ -69,50 +73,52 @@ def create_server(min_delay, max_delay, processes, host, port, process_id, num_p
 	s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 	s.bind((host, port))
 	s.listen(num_processes)
-	i = 0
+	client_id = 0
 	while True:
 		conn, addr = s.accept()
-		client_connections.append(conn)
+		client_connections.append((conn, client_id))
 		#print('Connected by: ',  addr)
-		read_thread = Thread(target = read_server, args= (conn, i))
+		read_thread = Thread(target = read_server, args= (conn, client_id, sequencer_socket))
 		read_thread.daemon = True
 		read_thread.start()
-		i += 1
+		client_id += 1
 		
 	for conn in client_connections:
 		conn.close()
 
 #Each thread is for a different process.
-def read_server(conn, i):
+def read_server(conn, client_id, sequencer_socket):
 	while True:
 		data = conn.recv(1024)
-		if(not data or str(data) == 'exit'):
-			break
 
-		data_str_split = str(data).split()
+		data_str_split = pickle.loads(data)
 		
 		#Put Request from front-end client
-		if(data_str_split[0] == 'p'):
+		#Send this request to sequencer 
+		if(data_str_split['method'] == 'put'):
 			message_object = {
 			'method': "put"
-			'variable' : data_str_split[1],
-			'value' : data_str_split[2]
+			'var' : data_str_split['var'],
+			'value' : data_str_split['value'],
+			'client_id' : client_id
 			}
 			data_serialized = pickle.dumps(message_object, -1)
 			sequencer_socket.sendall(data_serialized)
 
 		#Get Request from front-end client
-		elif(data_str_split[0] == 'g'):
+		#Send this request to sequencer
+		elif(data_str_split['method'] == 'get'):
 			message_object = {
-			'method': "put"
-			'variable' : data_str_split[1],
-			'value' : data_str_split[2]
+			'method': "get"
+			'var' : data_str_split['var'],
+			'client_id' : client_id
 			}
 			data_serialized = pickle.dumps(message_object, -1)
 			sequencer_socket.sendall(data_serialized)
 		#dump request
-		elif(data_str_split[0] == 'd'):
+		elif(data_str_split['method'] == 'dump'):
 			print(value_dict)
 
-
+if __name__ == "__main__":
+	main(sys.argv[1:])
 
