@@ -76,9 +76,9 @@ def read_server(s):
     while True:
         buffer = s.recv(128)
         if(buffer == "a"):
-            print "Acknowledged" # Acknoweldges dumps and puts
+            print "Acknowledged" # Acknowledgesw dumps and puts
         else:
-            print "Value = " + buffer # Prints the value after a get
+            print "Value = " + buffer # Prints the value after a get operation was sent
         go = 1
 
 if __name__ == "__main__":

@@ -1,14 +1,12 @@
 #!/usr/bin/python
 import socket
-import threading
-import sys, getopt
-import datetime
+import sys
 import time
 import random
 import mutex
 import pickle
 import Queue as Q
-from threading import Lock
+from threading import Lock, Thread
 
 value_dict = {}
 
@@ -31,7 +29,7 @@ def main(argv):
 
 	try:
 		#server and client
-		t3 = threading.Thread(target=create_server, args = (min_delay, max_delay, processes, found_process[1], int(found_process[2]), found_process[0], len(processes)))
+		t3 = Thread(target=create_server, args = (min_delay, max_delay, processes, found_process[1], int(found_process[2]), found_process[0], len(processes)))
 		t3.daemon = True
 		t3.start()
 
@@ -71,19 +69,21 @@ def create_server(min_delay, max_delay, processes, host, port, process_id, num_p
 	s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 	s.bind((host, port))
 	s.listen(num_processes)
-
+	i = 0
 	while True:
 		conn, addr = s.accept()
 		client_connections.append(conn)
 		#print('Connected by: ',  addr)
-		read_thread = threading.Thread(target = read_server, args= (conn) )
+		read_thread = Thread(target = read_server, args= (conn, i))
+		read_thread.daemon = True
 		read_thread.start()
+		i += 1
 		
 	for conn in client_connections:
 		conn.close()
 
 #Each thread is for a different process.
-def read_server(conn):
+def read_server(conn, i):
 	while True:
 		data = conn.recv(1024)
 		if(not data or str(data) == 'exit'):
