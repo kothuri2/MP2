@@ -213,5 +213,8 @@ def checkHoldBackQueue(hold_back_queue, vector_timestamps, id_received):
 			
 
 if __name__ == "__main__":
+	if(len(sys.argv) != 3):
+        print('Usage: python %s <config file name> <process number>' % sys.argv[0]) #usage
+        exit(1)
 	main(sys.argv[1:])
 
