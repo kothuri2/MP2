@@ -121,3 +121,27 @@ server removes 1px3 from the list and sends a to client 1
 client prints "Acknowledged"
 client opens up for next input
 '''
+
+
+'''
+EVENTUAL CONSISTENCY (from the view of a server):
+client connects to server replica
+server replica creates a thread to listen on from that client and gives that thread an id (1)
+user inputs put x 3
+client 1 sends px3 to server replica, id = 2
+client 1 blocks waiting for acknowledgement
+server replica receieves px3 and stores a tuple of 1px3 and the value of W in a list
+server replica updates the value of x and increments x's timestamp by one
+server replica multicasts a pickled object of px3, the timestamp, and the server process id
+other servers receive the multicast and compare the timestamp in the pickle with their timestamp for x
+    if the pickled timestamp is greater, change x and update the timestamp
+    if the pickled timestamp is less, don't change x or the timestamp
+    if the pickled timestamp is equal and the pickled server process is greater, change the x and update the timestamp
+    if the pickled timestamp is equal and the pickled server process is less, don't change x or the timestamp
+other servers send the acknowledgement back
+server replica decrements W for 1px3 until the value is 0, at which point it removes it from the list
+server replica sends client an acknlowedgement
+client prints "Acknowledged"
+client opens up for next input
+'''
+
