@@ -33,7 +33,7 @@ DEAL WITH CRASHED SERVERS
 '''
 value_dict = {}
 client_requests = []
-client_sockets = []
+client_sockets = {}
 
 def main(config, server_id, W, R):
     global found_process
@@ -50,7 +50,7 @@ def main(config, server_id, W, R):
 
     try:
         #server and client
-        server_thread = Thread(target=create_server, args = (W, R, min_delay, max_delay, processes, found_process[1], int(found_process[2]), found_process[0], len(processes)))
+        server_thread = Thread(target=create_server, args = (int(W), int(R), min_delay, max_delay, processes, found_process[1], int(found_process[2]), found_process[0], len(processes)))
         server_thread.daemon = True
         server_thread.start()
 
@@ -90,10 +90,13 @@ def create_server(W, R, min_delay, max_delay, processes, host, port, process_id,
     s.bind((host, port))
     s.listen(num_processes)
     client_id = 0
+    global start
+    start = 0
     while True:
         conn, addr = s.accept()
         client_connections[client_id] = conn
-        read_thread = Thread(target = read_server, args= (W, R, conn, client_id, process_id))
+        print("client_id: " + (str)(client_id))
+        read_thread = Thread(target = read_server, args= (W, R, conn, client_id, process_id, client_connections))
         read_thread.daemon = True
         read_thread.start()
         client_id += 1
@@ -103,58 +106,75 @@ def create_server(W, R, min_delay, max_delay, processes, host, port, process_id,
 
 
 #Each thread is for a different process.
-def read_server(W, R, conn, client_id, server_id):
-    start = 0
+def read_server(W, R, conn, client_id, server_id, client_connections):
+    global start
     global processes
     while True:
+        print "start: " + str(start)
         data = conn.recv(1024)
+        print "read"
 
         if(start == 0):
             create_connections()
             start = 1
 
         data_str_split = pickle.loads(data)
+
+        print data_str_split
         
         data_serialized = -1
         #Put Request from front-end client
         #Send this request to sequencer 
-        if(data_str_split['method'] == 'put'):
-            message_object = {
-            'from_server' : True,
-            'method': "put",
-            'var' : data_str_split['var'],
-            'value' : data_str_split['value'],
-            'server_id' : server_id
-            }
-            data_serialized = pickle.dumps(message_object, -1)
-            client_requests.append(((data_str_split), client_id, W))
+        if('from_server' not in data_str_split):
+            if(data_str_split['method'] == 'put'):
+                message_object = {
+                'from_server' : True,
+                'method': "put",
+                'var' : data_str_split['var'],
+                'value' : data_str_split['value'],
+                'server_id' : server_id
+                }
+                data_serialized = pickle.dumps(message_object, -1)
+                client_requests.append([(data_str_split), client_id, W])
+                if(W == 0):
+                    print "this?"
+                    value_dict[data_str_split['var']] = [data_str_split['value'], 0]
+                    client_connections[client_id].sendall("a")
 
-        #Get Request from front-end client
-        #Send this request to sequencer
-        elif(data_str_split['method'] == 'get'):
-            message_object = {
-            'from_server' : True,
-            'method': "get",
-            'var' : data_str_split['var'],
-            'server_id' : server_id
-            }
-            data_serialized = pickle.dumps(message_object, -1)
-            client_requests.append(((data_str_split), client_id, R))
-        
-        #dump request
-        elif(data_str_split['method'] == 'dump'):
-            print(value_dict)
+            #Get Request from front-end client
+            #Send this request to sequencer
+            elif(data_str_split['method'] == 'get'):
+                message_object = {
+                'from_server' : True,
+                'method': "get",
+                'var' : data_str_split['var'],
+                'server_id' : server_id
+                }
+                data_serialized = pickle.dumps(message_object, -1)
+                client_requests.append([(data_str_split), client_id, R])
+                if(R == 0):
+                    if data_str_split['var'] in value_dict:
+                        client_connections[client_id].sendall(value_dict[data_str_split['var']][0])
+                    else:
+                        client_connections[client_id].sendall('0')
+            
+            #dump request
+            elif(data_str_split['method'] == 'dump'):
+                print(value_dict)
+                client_connections[client_id].sendall("a")
 
         if(data_serialized != -1):
             for socket in client_sockets:
-                socket.sendall(data_serialized)
+                client_sockets[socket].sendall(data_serialized)
 
         if('from_server' in data_str_split and data_str_split['from_server']):
-
+            print "RECEIVED FROM SERVER"
             if('acknowledgement' in data_str_split):
                 for request in client_requests:
-                    if(request[0]['value'] == data_str_split['value'] and request[0]['var'] == data_str_split['var'] and request[0]['method'] == data_str_split['method']):
+                    if(request[0]['var'] == data_str_split['var'] and request[0]['method'] == data_str_split['method']):
+                        print request[2]
                         request[2] -= 1 #decrement W/R
+
                         if(data_str_split['method'] == "get"):
                             if('value' not in request[0] or data_str_split['other_vals'][1] > request[0]['value'][1]):
                                 request[0]['value'] = data_str_split['other_vals']
@@ -169,23 +189,26 @@ def read_server(W, R, conn, client_id, server_id):
                                     value_dict[request[0]['var']] = [request[0]['value'], 0]
                                 client_connections[request[1]].sendall("a") # send the client acknowledgement of put finishing
                             elif(data_str_split['method'] == "get"):
-                                client_connections[request[1]].sendall(request[0])['value'][0] # send the client the most recent value
+                                client_connections[request[1]].sendall(request[0])['value'] # send the client the most recent value
                             client_requests.remove(request)
             
             elif(data_str_split['method'] == "put"):
-                value_dict[data_str_split['var']] = data_str_split['var'] # modify value and timestamp in dict (tuple)
+                value_dict[data_str_split['var']] = data_str_split['value'] # modify value and timestamp in dict (tuple)
                 data_str_split['acknowledgement'] = True
-                data_serialized = pickle.dumps(message_object, -1)
-                client_sockets[data_str_split['server_id']].sendall(data_str_split)
+                data_serialized = pickle.dumps(data_str_split, -1)
+                client_sockets[data_str_split['server_id']].sendall(data_serialized)
 
             elif(data_str_split['method'] == "get"):
                 data_str_split['other_vals'] = value_dict[data_str_split['var']] # add value and timestamp tuple
                 data_str_split['other_server'] = server_id
                 data_str_split['acknowledgement'] = True
-                data_serialized = pickle.dumps(message_object, -1)
-                client_sockets[data_str_split['server_id']].sendall(data_str_split)
+                data_serialized = pickle.dumps(data_str_split, -1)
+                client_sockets[data_str_split['server_id']].sendall(data_serialized)
+                
+        print "end"
 
 def create_connections():
+    print "enter"
     global found_process
     client_socket_ids = []
     for process in processes:
@@ -197,8 +220,9 @@ def create_connections():
             except:
                 print("unable to connect: other process may not have been started")
                 continue
-            client_sockets.append(s)
+            client_sockets[process[0]] = s
             client_socket_ids.append(int(process[0]))
+    print "exit"
 
 if __name__ == "__main__":
     if(len(sys.argv) != 5):
