@@ -95,8 +95,8 @@ def create_server(W, R, min_delay, max_delay, processes, host, port, process_id,
     while True:
         conn, addr = s.accept()
         client_connections[client_id] = conn
-        print("client_id: " + (str)(client_id))
-        read_thread = Thread(target = read_server, args= (W, R, conn, client_id, process_id, client_connections))
+        #print("client_id: " + (str)(client_id))
+        read_thread = Thread(target = read_server, args= (min_delay, max_delay, W, R, conn, client_id, process_id, client_connections))
         read_thread.daemon = True
         read_thread.start()
         client_id += 1
@@ -106,13 +106,13 @@ def create_server(W, R, min_delay, max_delay, processes, host, port, process_id,
 
 
 #Each thread is for a different process.
-def read_server(W, R, conn, client_id, server_id, client_connections):
+def read_server(min_delay, max_delay, W, R, conn, client_id, server_id, client_connections):
     global start
     global processes
     while True:
-        print "start: " + str(start)
+        #print "start: " + str(start)
         data = conn.recv(1024)
-        print "read"
+        #print "read"
 
         if(start == 0):
             create_connections()
@@ -120,13 +120,19 @@ def read_server(W, R, conn, client_id, server_id, client_connections):
 
         data_str_split = pickle.loads(data)
 
-        print data_str_split
+        #print data_str_split
         
         data_serialized = -1
         #Put Request from front-end client
         #Send this request to sequencer 
         if('from_server' not in data_str_split):
             if(data_str_split['method'] == 'put'):
+                if(data_str_split['var'] in value_dict):
+                    #print data_str_split['value']
+                    data_str_split['value'] = [data_str_split['value'], value_dict[data_str_split['var']][1] + 1]
+                    #print data_str_split['value']
+                else:
+                    data_str_split['value'] = [data_str_split['value'], 1] # intialize time stamp to 1
                 message_object = {
                 'from_server' : True,
                 'method': "put",
@@ -137,8 +143,8 @@ def read_server(W, R, conn, client_id, server_id, client_connections):
                 data_serialized = pickle.dumps(message_object, -1)
                 client_requests.append([(data_str_split), client_id, W])
                 if(W == 0):
-                    print "this?"
-                    value_dict[data_str_split['var']] = [data_str_split['value'], 0]
+                    #print "this?"
+                    value_dict[data_str_split['var']] = data_str_split['value']
                     client_connections[client_id].sendall("a")
 
             #Get Request from front-end client
@@ -154,9 +160,10 @@ def read_server(W, R, conn, client_id, server_id, client_connections):
                 client_requests.append([(data_str_split), client_id, R])
                 if(R == 0):
                     if data_str_split['var'] in value_dict:
+                        #print value_dict[data_str_split['var']]
                         client_connections[client_id].sendall(value_dict[data_str_split['var']][0])
                     else:
-                        client_connections[client_id].sendall('0')
+                        client_connections[client_id].sendall('-1')
             
             #dump request
             elif(data_str_split['method'] == 'dump'):
@@ -165,16 +172,17 @@ def read_server(W, R, conn, client_id, server_id, client_connections):
 
         if(data_serialized != -1):
             for socket in client_sockets:
-                client_sockets[socket].sendall(data_serialized)
+                send_thread = Thread(target=send_message, args = (min_delay, max_delay, data_serialized, client_sockets[socket]))
+                send_thread.daemon = True
+                send_thread.start()
 
         if('from_server' in data_str_split and data_str_split['from_server']):
-            print "RECEIVED FROM SERVER"
+            #print "RECEIVED FROM SERVER"
             if('acknowledgement' in data_str_split):
                 for request in client_requests:
                     if(request[0]['var'] == data_str_split['var'] and request[0]['method'] == data_str_split['method']):
-                        print request[2]
+                        #print request[2]
                         request[2] -= 1 #decrement W/R
-
                         if(data_str_split['method'] == "get"):
                             if('value' not in request[0] or data_str_split['other_vals'][1] > request[0]['value'][1]):
                                 request[0]['value'] = data_str_split['other_vals']
@@ -182,33 +190,45 @@ def read_server(W, R, conn, client_id, server_id, client_connections):
                                 request[0]['value'] = data_str_split['other_vals']
                         if(request[2] == 0):
                             if(data_str_split['method'] == "put"):
-                                if 'var' in request[0]:
-                                    value_dict[request[0]['var']][0] = request[0]['value']
-                                    value_dict[request[0]['var']][1] += 1
+                                #print value_dict
+                                #print request[0]['var']
+                                if request[0]['var'] in value_dict:
+                                    value_dict[request[0]['var']] = request[0]['value']
+                                    #value_dict[request[0]['var']][1] += 1
                                 else:
-                                    value_dict[request[0]['var']] = [request[0]['value'], 0]
+                                    #print "ENTERED THE WRONG PLACE"
+                                    value_dict[request[0]['var']] = request[0]['value']
                                 client_connections[request[1]].sendall("a") # send the client acknowledgement of put finishing
                             elif(data_str_split['method'] == "get"):
-                                client_connections[request[1]].sendall(request[0])['value'] # send the client the most recent value
+                                client_connections[request[1]].sendall(request[0]['value'][0]) # send the client the most recent value
                             client_requests.remove(request)
             
             elif(data_str_split['method'] == "put"):
                 value_dict[data_str_split['var']] = data_str_split['value'] # modify value and timestamp in dict (tuple)
                 data_str_split['acknowledgement'] = True
                 data_serialized = pickle.dumps(data_str_split, -1)
+                time.sleep(random.randrange(min_delay, max_delay))
                 client_sockets[data_str_split['server_id']].sendall(data_serialized)
 
             elif(data_str_split['method'] == "get"):
-                data_str_split['other_vals'] = value_dict[data_str_split['var']] # add value and timestamp tuple
+                if(data_str_split['var'] in value_dict):
+                    data_str_split['other_vals'] = value_dict[data_str_split['var']] # add value and timestamp tuple
+                else:
+                    data_str_split['other_vals'] = ['-1', -1]
                 data_str_split['other_server'] = server_id
                 data_str_split['acknowledgement'] = True
                 data_serialized = pickle.dumps(data_str_split, -1)
+                time.sleep(random.randrange(min_delay, max_delay))
                 client_sockets[data_str_split['server_id']].sendall(data_serialized)
                 
-        print "end"
+        #print "end"
+
+def send_message(min_delay, max_delay, data_serialized, socket):
+    time.sleep(random.randrange(min_delay, max_delay))
+    socket.sendall(data_serialized)
 
 def create_connections():
-    print "enter"
+    #print "enter"
     global found_process
     client_socket_ids = []
     for process in processes:
@@ -222,7 +242,7 @@ def create_connections():
                 continue
             client_sockets[process[0]] = s
             client_socket_ids.append(int(process[0]))
-    print "exit"
+    #print "exit"
 
 if __name__ == "__main__":
     if(len(sys.argv) != 5):
