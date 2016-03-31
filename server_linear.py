@@ -132,18 +132,19 @@ def read_server(conn,sequencer_socket, host, port, process_id, client_id):
 			
 			#dump request
 			elif(data_str_split['method'] == 'dump'):
+				client_connections[client_id].sendall("a")
 				print(value_dict)
 
 		elif('sequence_number' in data_str_split):
 			#Sequencer finished multicasting so tell client that done
+			print(data_str_split['sequence_number'])
 			if(data_str_split['request_status'] == "Sequencer finished"):
 				if(data_str_split['method'] == "put"):
 					client_connections[data_str_split['client_id']].sendall("a")
 				elif(data_str_split['method'] == "get"):
 					client_connections[data_str_split['client_id']].sendall(str(data_str_split['got_value']))
-
+			
 			elif(data_str_split['request_status'] == "multicasting to replicas"):
-				print(data_str_split['sequence_number'])
 				if(data_str_split['sequence_number'] == (sequence_number + 1)):
 					if(data_str_split['method'] == "put"):
 						seq = data_str_split['sequence_number']
@@ -195,7 +196,9 @@ def checkHoldBackQueue(sequencer_socket):
 			print("inside here")
 			return
 		value = hold_back_queue.get(block=True)
-
+		print(value)
+		print(value[0])
+		print(sequence_number)
 		if(int(value[0]) == (int(sequence_number) + 1)):
 			data_str_split = value[1]
 			if(data_str_split['method'] == "put"):
