@@ -10,28 +10,33 @@ def main(config, server_id, client_id):
 
     server = parse_file(config, server_id).split()
 
-    client_thread = Thread(target=create_client, args=(server[1], server[2], client_id)) #start client
+    client_thread = Thread(target=create_client, args=(server[1], server[2], client_id, server_id)) #start client
     client_thread.daemon = True
     client_thread.start()
 
     while True:
         time.sleep(1) #keep main function running
 
-
 def parse_file(file_name, server_id):
+    global processes
     i = 0
+    server = ''
+    processes = []
     with open(file_name) as f:
         for line in f:
             if(i < 1):
                 i += 1
-            elif(line.split()[0] == server_id):
-                return line
+            elif(len(line.split()) != 0):
+                processes.append(line.split())
+                if(line.split()[0] == server_id):
+                    server = line
+    return server
 '''
 Creates the client for the process and reads in input from the command line.
 Depending on whether it is multicast or unicast, the code will adapt accordingly.
 '''
-def create_client(ip, port, client_id):
-
+def create_client(ip, port, client_id, server_id):
+    global s
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
@@ -40,15 +45,16 @@ def create_client(ip, port, client_id):
         print("unable to connect: other process may not have been started")
         exit(1)
 
-    read_client_thread = Thread(target = read_client, args=(s, client_id))
+    read_client_thread = Thread(target = read_client, args=(client_id))
     read_client_thread.daemon = True
     read_client_thread.start()
 
-    read_server_thread = Thread(target = read_server, args=(s,))
+    read_server_thread = Thread(target = read_server, args=(server_id))
     read_server_thread.daemon = True
     read_server_thread.start()
 
-def read_client(s, client_id):
+def read_client(client_id):
+    global s
     global go
     while True:
         #print "before"
@@ -93,12 +99,31 @@ def read_client(s, client_id):
             s.sendall(data_serialized)
             go = 0
         #print "done"
-def read_server(s):
+def read_server(server_id):
+    global s
     global go
+    global processes
     while True:
         buffer = s.recv(128)
         if(buffer == "a"):
             print "Acknowledged" # Acknowledges dumps and puts
+        elif(buffer == "Q"):
+            s = None
+            while s == None:
+                if(processes[len(processes)-1][0] == server_id):
+                    process = processes[0]
+                else:
+                    for i in range(len(processes)):
+                        if((int)(processes[i][0]) == (int)(server_id) + 1):
+                            process = processes[i]
+                            break
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                try:
+                    s.connect((process[1], int(process[2])))
+                except:
+                    s = None
+                    processes.remove(process)
         else:
             print "Value = " + buffer # Prints the value after a get operation was sent
         go = 1

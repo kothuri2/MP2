@@ -1,4 +1,5 @@
 import socket
+import signal
 import sys
 import time
 import random
@@ -83,6 +84,7 @@ def parse_file(file_name):
 Accepts front-end client connections
 '''
 def create_server(W, R, min_delay, max_delay, processes, host, port, process_id, num_processes):
+    global client_connections
     client_connections = {}
 
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -110,29 +112,35 @@ def read_server(min_delay, max_delay, W, R, conn, client_id, server_id, client_c
     global start
     global processes
     while True:
+        ignore = 0
         #print "start: " + str(start)
         data = conn.recv(1024)
         #print "read"
-
+        #print(not data)
+        #print (data == '')
+        if(not data):
+            ignore = 1
         if(start == 0):
             create_connections()
             start = 1
-
-        data_str_split = pickle.loads(data)
+        #print ignore
+        #print data
+        if(ignore == 0):
+            data_str_split = pickle.loads(data)
 
         #print data_str_split
         
         data_serialized = -1
         #Put Request from front-end client
         #Send this request to sequencer 
-        if('from_server' not in data_str_split):
+        if(ignore == 0 and 'from_server' not in data_str_split):
             if(data_str_split['method'] == 'put'):
                 if(data_str_split['var'] in value_dict):
                     #print data_str_split['value']
-                    data_str_split['value'] = [data_str_split['value'], value_dict[data_str_split['var']][1] + 1]
+                    data_str_split['value'] = [data_str_split['value'], value_dict[data_str_split['var']][1] + 1, server_id]
                     #print data_str_split['value']
                 else:
-                    data_str_split['value'] = [data_str_split['value'], 1] # intialize time stamp to 1
+                    data_str_split['value'] = [data_str_split['value'], 1, server_id] # initialize time stamp to 1
                 message_object = {
                 'from_server' : True,
                 'method': "put",
@@ -176,35 +184,45 @@ def read_server(min_delay, max_delay, W, R, conn, client_id, server_id, client_c
                 send_thread.daemon = True
                 send_thread.start()
 
-        if('from_server' in data_str_split and data_str_split['from_server']):
+        if(ignore == 0 and 'from_server' in data_str_split and data_str_split['from_server']):
             #print "RECEIVED FROM SERVER"
             if('acknowledgement' in data_str_split):
                 for request in client_requests:
                     if(request[0]['var'] == data_str_split['var'] and request[0]['method'] == data_str_split['method']):
                         #print request[2]
                         request[2] -= 1 #decrement W/R
-                        if(data_str_split['method'] == "get"):
+                        if(data_str_split['method'] == "get" or data_str_split['method'] == "put"):
                             if('value' not in request[0] or data_str_split['other_vals'][1] > request[0]['value'][1]):
                                 request[0]['value'] = data_str_split['other_vals']
-                            elif(data_str_split['other_vals'][1] == request[0]['value'][1] and data_str_split['other_server'] > server_id):
+                            elif(data_str_split['other_vals'][1] == request[0]['value'][1] and data_str_split['other_vals'][2] > request[0]['value'][2]):
                                 request[0]['value'] = data_str_split['other_vals']
+                            elif(request[0]['var'] in value_dict):
+                                if(data_str_split['other_vals'][1] == value_dict[request[0]['var']][1] and data_str_split['other_vals'][2] < value_dict[request[0]['var']][2]):
+                                    request[0]['value'] = value_dict[request[0]['var']]
                         if(request[2] == 0):
                             if(data_str_split['method'] == "put"):
                                 #print value_dict
                                 #print request[0]['var']
-                                if request[0]['var'] in value_dict:
-                                    value_dict[request[0]['var']] = request[0]['value']
-                                    #value_dict[request[0]['var']][1] += 1
-                                else:
-                                    #print "ENTERED THE WRONG PLACE"
-                                    value_dict[request[0]['var']] = request[0]['value']
+                                #print data_str_split['other_vals']
+                                #print request[0]['value']
+                                #print value_dict[request[0]['var']]
+                                value_dict[request[0]['var']] = request[0]['value']
+                                #print value_dict[request[0]['var']]
                                 client_connections[request[1]].sendall("a") # send the client acknowledgement of put finishing
                             elif(data_str_split['method'] == "get"):
                                 client_connections[request[1]].sendall(request[0]['value'][0]) # send the client the most recent value
                             client_requests.remove(request)
             
             elif(data_str_split['method'] == "put"):
-                value_dict[data_str_split['var']] = data_str_split['value'] # modify value and timestamp in dict (tuple)
+                if(data_str_split['var'] not in value_dict or data_str_split['value'][1] > value_dict[data_str_split['var']][1]):
+                    value_dict[data_str_split['var']] = data_str_split['value'] # modify value and timestamp in dict if not existent or timestamp is greater
+                elif(data_str_split['value'][1] == value_dict[data_str_split['var']][1] and data_str_split['server_id'] > value_dict[data_str_split['var']][2]):
+                    value_dict[data_str_split['var']] = data_str_split['value'] # modify value and timestamp in dict if timestampm is equal and server id is greater
+                data_str_split['other_server'] = server_id
+                if(data_str_split['var'] in value_dict):
+                    data_str_split['other_vals'] = value_dict[data_str_split['var']] # add value and timestamp tuple
+                else:
+                    data_str_split['other_vals'] = ['-1', -1]
                 data_str_split['acknowledgement'] = True
                 data_serialized = pickle.dumps(data_str_split, -1)
                 time.sleep(random.randrange(min_delay, max_delay))
@@ -244,8 +262,14 @@ def create_connections():
             client_socket_ids.append(int(process[0]))
     #print "exit"
 
+def signal_handler(signal, frame):
+    for client in client_connections:
+        client_connections[client].sendall("Q")
+    sys.exit(0)
+
 if __name__ == "__main__":
     if(len(sys.argv) != 5):
         print('Usage: python %s <config file name> <server id> <W> <R>' % sys.argv[0]) #usage
         exit(1)
+    signal.signal(signal.SIGINT, signal_handler)
     main(sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4])
