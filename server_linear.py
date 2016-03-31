@@ -13,10 +13,13 @@ value_dict = {}
 client_requests = []
 client_connections = {}
 hold_back_queue = Q.PriorityQueue()
-def main(argv):
-	global sequence_number
-	sequence_number = 0
 
+def main(argv):
+	global sequence_number, output_file
+	sequence_number = 0
+	global IP, PORT
+	IP = "127.0.0.1"
+	PORT = 1234
 	parsed_file = parse_file(argv[0])
 	processes = parsed_file[0]
 	global min_delay, max_delay
@@ -29,13 +32,17 @@ def main(argv):
 	sequencer_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 	sequencer_socket.connect(("127.0.0.1", int(8050)))
 
+	#VISUALIZATION SOCKET
+	sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+	sock.sendto("START,SessionNumber1", (IP, PORT))
+
 	for process in processes:
 		if(argv[1] in process):
 			found_process = process
 
 	try:
 		#server and client
-		t3 = Thread(target=create_server, args = (min_delay, max_delay, processes, found_process[1], int(found_process[2]), found_process[0], len(processes), sequencer_socket))
+		t3 = Thread(target=create_server, args = (sock, min_delay, max_delay, processes, found_process[1], int(found_process[2]), found_process[0], len(processes), sequencer_socket))
 		t3.daemon = True
 		t3.start()
 
@@ -67,7 +74,7 @@ def parse_file(file_name):
 '''
 Accepts front-end client connections
 '''
-def create_server(min_delay, max_delay, processes, host, port, process_id, num_processes, sequencer_socket):
+def create_server(sock, min_delay, max_delay, processes, host, port, process_id, num_processes, sequencer_socket):
 	#print('Creating server for ' + id)
 
 	s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -78,7 +85,7 @@ def create_server(min_delay, max_delay, processes, host, port, process_id, num_p
 	while True:
 		conn, addr = s.accept()
 		client_connections[client_id] = conn
-		read_thread = Thread(target = read_server, args= (conn, sequencer_socket, host, port, process_id, client_id))
+		read_thread = Thread(target = read_server, args= (sock, conn, sequencer_socket, host, port, process_id, client_id))
 		read_thread.daemon = True
 		read_thread.start()
 		client_id += 1
@@ -87,8 +94,8 @@ def create_server(min_delay, max_delay, processes, host, port, process_id, num_p
 		conn.close()
 
 #Each thread is for a different process.
-def read_server(conn,sequencer_socket, host, port, process_id, client_id):
-	global sequence_number, min_delay, max_delay
+def read_server(sock, conn,sequencer_socket, host, port, process_id, client_id):
+	global sequence_number, min_delay, max_delay, IP, PORT
 	while True:
 		data = conn.recv(1024)
 		data_str_split = pickle.loads(data)
@@ -100,6 +107,7 @@ def read_server(conn,sequencer_socket, host, port, process_id, client_id):
 				'method': "put",
 				'var': data_str_split['var'],
 				'value': data_str_split['value'],
+				'client_num' : data_str_split['client_num'],
 				'server_id': process_id,
 				'server_host': host,
 				'server_port' : port,
@@ -107,6 +115,7 @@ def read_server(conn,sequencer_socket, host, port, process_id, client_id):
 				'request_status' : "sent to sequencer"
 				}
 				data_serialized = pickle.dumps(message_object, -1)
+				sock.sendto("SessionNumber1,"+str(message_object['client_num'])+",put,"+str(message_object['var'])+ "," +str(int(time.time())) +",req,"+ str(message_object['value']), (IP, PORT))
 				#client_requests.append((data_str_split, client_id))
 				time.sleep(random.randrange(min_delay, max_delay))
 				sequencer_socket.sendall(data_serialized)
@@ -118,6 +127,7 @@ def read_server(conn,sequencer_socket, host, port, process_id, client_id):
 				message_object = {
 				'method': "get",
 				'var' : data_str_split['var'],
+				'client_num' : data_str_split['client_num'],
 				'server_id' : process_id,
 				'server_host' : host,
 				'server_port' : port,
@@ -125,6 +135,7 @@ def read_server(conn,sequencer_socket, host, port, process_id, client_id):
 				'request_status' : "sent to sequencer"
 				}
 				data_serialized = pickle.dumps(message_object, -1)
+				sock.sendto("SessionNumber1,"+str(message_object['client_num'])+",get,"+str(message_object['var'])+","+str(int(time.time())) +",req,", (IP, PORT))
 				#client_requests.append((data_str_split), client_id)
 				time.sleep(random.randrange(min_delay, max_delay))
 				sequencer_socket.sendall(data_serialized)
@@ -140,12 +151,14 @@ def read_server(conn,sequencer_socket, host, port, process_id, client_id):
 			print(data_str_split['sequence_number'])
 			if(data_str_split['request_status'] == "Sequencer finished"):
 				if(data_str_split['method'] == "put"):
+					sock.sendto("SessionNumber1,"+str(data_str_split['client_num'])+",put,"+str(data_str_split['var'])+","+str(int(time.time())) +",resp,"+ str(data_str_split['value']), (IP, PORT))
 					client_connections[data_str_split['client_id']].sendall("a")
 				elif(data_str_split['method'] == "get"):
+					sock.sendto("SessionNumber1,"+str(data_str_split['client_num'])+",get,"+str(data_str_split['var'])+","+str(int(time.time())) +",resp,"+ str(data_str_split['got_value']), (IP, PORT))
 					client_connections[data_str_split['client_id']].sendall(str(data_str_split['got_value']))
 			
 			elif(data_str_split['request_status'] == "multicasting to replicas"):
-				if(data_str_split['sequence_number'] == (sequence_number + 1)):
+				if(int(data_str_split['sequence_number']) == (int(sequence_number) + 1)):
 					if(data_str_split['method'] == "put"):
 						seq = data_str_split['sequence_number']
 						print("Put - " + data_str_split['request_status'] + " - " + str(seq))

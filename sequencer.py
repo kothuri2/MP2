@@ -13,7 +13,6 @@ replica_server_sockets = {}
 server_requests = {}
 server_sockets_lock = Lock()
 working_flag_lock = Lock()
-request_queue = Q.PriorityQueue()
 
 def main(config):
 	global sequence_number
@@ -86,8 +85,7 @@ def read_server(conn, processes):
 			server_requests[sequence_number] = len(replica_server_connections)
 			print("GOT request for " + data_loaded['method'] + " " + data_loaded['var'] + " from replica " + data_loaded['server_id'] + "  - seq #: " + str(sequence_number))
 			
-			request_queue.put(sequence_number, data_loaded)
-			multicast_thread = Thread(target = multicastRequest, args = (processes))
+			multicast_thread = Thread(target = multicastRequest, args = (data_loaded, processes))
 			multicast_thread.daemon = True
 			multicast_thread.start()
 
@@ -104,7 +102,6 @@ def read_server(conn, processes):
 				data_serialized = pickle.dumps(data_loaded, -1)
 				time.sleep(random.randrange(min_delay, max_delay))
 				replica_server_sockets[server_id].sendall(data_serialized)
-
 				
 
 def create_socket(server_id, host, port):
@@ -121,35 +118,30 @@ def create_socket(server_id, host, port):
 	server_sockets_lock.release()
 	return 0
 
-def multicastRequest(processes):
+def multicastRequest(data_loaded, processes):
 	#Multicast the message to all replica servers
-	while True:
-		if(request_queue.empty()):
-			print("inside here")
-			return
-		value = hold_back_queue.get(block=True)
-		method = value[1]['method']
-		variable = value[1]['var']
-		server_id = value[1]['server_id']
-		for process in processes:
-			if(process[0] in replica_server_sockets):
-				data_serialized = pickle.dumps(value[1], -1)
+	method = data_loaded['method']
+	variable = data_loaded['var']
+	server_id = data_loaded['server_id']
+	for process in processes:
+		if(process[0] in replica_server_sockets):
+			data_serialized = pickle.dumps(data_loaded, -1)
+			time.sleep(random.randrange(min_delay, max_delay))
+			working_flag_lock.acquire()
+			replica_server_sockets[process[0]].sendall(data_serialized)
+			working_flag_lock.release()
+			print("Sent multicast to replicas - " + method + " " + variable + " from replica " + server_id)
+		else:
+			val = create_socket(process[0], process[1], int(process[2]))
+			if(val != -1):
+				data_serialized = pickle.dumps(data_loaded, -1)
 				time.sleep(random.randrange(min_delay, max_delay))
 				working_flag_lock.acquire()
 				replica_server_sockets[process[0]].sendall(data_serialized)
 				working_flag_lock.release()
 				print("Sent multicast to replicas - " + method + " " + variable + " from replica " + server_id)
-			else:
-				val = create_socket(process[0], process[1], int(process[2]))
-				if(val != -1):
-					data_serialized = pickle.dumps(value[1], -1)
-					time.sleep(random.randrange(min_delay, max_delay))
-					working_flag_lock.acquire()
-					replica_server_sockets[process[0]].sendall(data_serialized)
-					working_flag_lock.release()
-					print("Sent multicast to replicas - " + method + " " + variable + " from replica " + server_id)
 
-		return
+	return
 
 if __name__ == "__main__":
 	main(sys.argv[1])

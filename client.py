@@ -6,10 +6,11 @@ from threading import Thread, Lock
 
 go = 1
 
-def main(config, server_id):
+def main(config, server_id, client_id):
+
     server = parse_file(config, server_id).split()
 
-    client_thread = Thread(target=create_client, args=(server[1], server[2])) #start client
+    client_thread = Thread(target=create_client, args=(server[1], server[2], client_id)) #start client
     client_thread.daemon = True
     client_thread.start()
 
@@ -29,7 +30,7 @@ def parse_file(file_name, server_id):
 Creates the client for the process and reads in input from the command line.
 Depending on whether it is multicast or unicast, the code will adapt accordingly.
 '''
-def create_client(ip, port):
+def create_client(ip, port, client_id):
 
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -39,7 +40,7 @@ def create_client(ip, port):
         print("unable to connect: other process may not have been started")
         exit(1)
 
-    read_client_thread = Thread(target = read_client, args=(s,))
+    read_client_thread = Thread(target = read_client, args=(s, client_id))
     read_client_thread.daemon = True
     read_client_thread.start()
 
@@ -47,7 +48,7 @@ def create_client(ip, port):
     read_server_thread.daemon = True
     read_server_thread.start()
 
-def read_client(s):
+def read_client(s, client_id):
     global go
     while True:
         #print "before"
@@ -62,7 +63,8 @@ def read_client(s):
         if(message_split[0] == "get"):
             message_object = {
                 'method' : "get",
-                'var' : message_split[1]
+                'var' : message_split[1],
+                'client_num' : client_id
             }
             data_serialized = pickle.dumps(message_object, -1)
 
@@ -70,7 +72,8 @@ def read_client(s):
             message_object = {
                 'method' : "put",
                 'var' : message_split[1],
-                'value' : message_split[2]
+                'value' : message_split[2],
+                'client_num' : client_id
             }
             data_serialized = pickle.dumps(message_object, -1)
 
@@ -101,10 +104,10 @@ def read_server(s):
         go = 1
 
 if __name__ == "__main__":
-    if(len(sys.argv) != 3):
-        print('Usage: python %s <config file name> <server pair id>' % sys.argv[0]) #usage
+    if(len(sys.argv) != 4):
+        print('Usage: python %s <config file name> <server pair id> <client id>' % sys.argv[0]) #usage
         exit(1)
-    main(sys.argv[1], sys.argv[2])
+    main(sys.argv[1], sys.argv[2], sys.argv[3])
 
 
 '''
