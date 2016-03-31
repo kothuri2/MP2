@@ -50,7 +50,10 @@ def create_client(ip, port):
 def read_client(s):
     global go
     while True:
+        #print "before"
         message = raw_input('')
+        #print "message: " + message 
+        #print "After"
         
         while go == 0: # Wait until the previous request is acknowledged
             time.sleep(1)
@@ -86,13 +89,13 @@ def read_client(s):
         if(data_serialized != -1):
             s.sendall(data_serialized)
             go = 0
-
+        #print "done"
 def read_server(s):
     global go
     while True:
         buffer = s.recv(128)
         if(buffer == "a"):
-            print "Acknowledged Put" # Acknowledges dumps and puts
+            print "Acknowledged" # Acknowledges dumps and puts
         else:
             print "Value = " + buffer # Prints the value after a get operation was sent
         go = 1
