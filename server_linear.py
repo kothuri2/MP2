@@ -247,8 +247,7 @@ def checkHoldBackQueue(sequencer_socket):
 		else:
 			hold_back_queue.put(value)
 			return
-
-		sequence_number = value[0]
+		sequence_number += 1
 		hold_back_queue.task_done()
 
 if __name__ == "__main__":
