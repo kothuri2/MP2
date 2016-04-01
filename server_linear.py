@@ -107,120 +107,127 @@ def create_server(sock, min_delay, max_delay, processes, host, port, process_id,
 def read_server(sock, conn,sequencer_socket, host, port, process_id, client_id):
 	global sequence_number, min_delay, max_delay, IP, PORT, output_file
 	while True:
-		print("HERE")
+		#print("HERE")
 		data = conn.recv(1024)
 		data_str_split = pickle.loads(data)
-		#Put Request from front-end client
+
+		temp_thread = Thread(target=read_message, args = (data_str_split, sock, conn,sequencer_socket, host, port, process_id, client_id))
+		temp_thread.daemon = True
+		temp_thread.start()
+
+def read_message(data_str_split, sock, conn,sequencer_socket, host, port, process_id, client_id):
+	global sequence_number, min_delay, max_delay, IP, PORT, output_file
+	#Put Request from front-end client
+	#Send this request to sequencer
+	print(data_str_split)
+	if('sequence_number' not in data_str_split):
+		if(data_str_split['method'] == 'put'):
+			message_object = {
+			'method': "put",
+			'var': data_str_split['var'],
+			'value': data_str_split['value'],
+			'client_num' : data_str_split['client_num'],
+			'server_id': process_id,
+			'server_host': host,
+			'server_port' : port,
+			'client_id' : client_id,
+			'request_status' : "sent to sequencer"
+			}
+			data_serialized = pickle.dumps(message_object, -1)
+			output_file_lock.acquire()
+			output_file.write("SessionNumber1,"+str(message_object['client_id'])+",put,"+str(message_object['var'])+ "," +str(int(time.time())) +",req,"+ str(message_object['value']) + "\n")
+			output_file_lock.release()
+			sock.sendto("SessionNumber1,"+str(message_object['client_num'])+",put,"+str(message_object['var'])+ "," +str(int(time.time())) +",req,"+ str(message_object['value']), (IP, PORT))
+			#client_requests.append((data_str_split, client_id))
+			time.sleep(random.randrange(min_delay, max_delay))
+			sequencer_socket.sendall(data_serialized)
+			#print("Sent put req to sequencer")
+
+		#Get Request from front-end client
 		#Send this request to sequencer
-		print(data_str_split)
-		if('sequence_number' not in data_str_split):
-			if(data_str_split['method'] == 'put'):
-				message_object = {
-				'method': "put",
-				'var': data_str_split['var'],
-				'value': data_str_split['value'],
-				'client_num' : data_str_split['client_num'],
-				'server_id': process_id,
-				'server_host': host,
-				'server_port' : port,
-				'client_id' : client_id,
-				'request_status' : "sent to sequencer"
-				}
-				data_serialized = pickle.dumps(message_object, -1)
-				output_file_lock.acquire()
-				output_file.write("SessionNumber1,"+str(message_object['client_num'])+",put,"+str(message_object['var'])+ "," +str(int(time.time())) +",req,"+ str(message_object['value']) + "\n")
-				output_file_lock.release()
-				sock.sendto("SessionNumber1,"+str(message_object['client_num'])+",put,"+str(message_object['var'])+ "," +str(int(time.time())) +",req,"+ str(message_object['value']), (IP, PORT))
-				#client_requests.append((data_str_split, client_id))
-				time.sleep(random.randrange(min_delay, max_delay))
-				sequencer_socket.sendall(data_serialized)
-				#print("Sent put req to sequencer")
+		elif(data_str_split['method'] == 'get'):
+			message_object = {
+			'method': "get",
+			'var' : data_str_split['var'],
+			'client_num' : data_str_split['client_num'],
+			'server_id' : process_id,
+			'server_host' : host,
+			'server_port' : port,
+			'client_id' : client_id,
+			'request_status' : "sent to sequencer"
+			}
+			data_serialized = pickle.dumps(message_object, -1)
+			output_file_lock.acquire()
+			output_file.write("SessionNumber1,"+str(message_object['client_id'])+",get,"+str(message_object['var'])+","+str(int(time.time())) +",req,\n")
+			output_file_lock.release()
+			sock.sendto("SessionNumber1,"+str(message_object['client_num'])+",get,"+str(message_object['var'])+","+str(int(time.time())) +",req,", (IP, PORT))
+			#client_requests.append((data_str_split), client_id)
+			time.sleep(random.randrange(min_delay, max_delay))
+			sequencer_socket.sendall(data_serialized)
+			#print("Sent get req to sequencer")
+		
+		#dump request
+		elif(data_str_split['method'] == 'dump'):
+			client_connections[client_id].sendall("a")
+			print(value_dict)
 
-			#Get Request from front-end client
-			#Send this request to sequencer
-			elif(data_str_split['method'] == 'get'):
-				message_object = {
-				'method': "get",
-				'var' : data_str_split['var'],
-				'client_num' : data_str_split['client_num'],
-				'server_id' : process_id,
-				'server_host' : host,
-				'server_port' : port,
-				'client_id' : client_id,
-				'request_status' : "sent to sequencer"
-				}
-				data_serialized = pickle.dumps(message_object, -1)
+	elif('sequence_number' in data_str_split):
+		#Sequencer finished multicasting so tell client that done
+		#print(data_str_split['sequence_number'])
+		if(data_str_split['request_status'] == "Sequencer finished"):
+			if(data_str_split['method'] == "put"):
 				output_file_lock.acquire()
-				output_file.write("SessionNumber1,"+str(message_object['client_num'])+",get,"+str(message_object['var'])+","+str(int(time.time())) +",req,\n")
+				output_file.write("SessionNumber1,"+str(data_str_split['client_id'])+",put,"+str(data_str_split['var'])+","+str(int(time.time())) +",resp,"+ str(data_str_split['value']) + "\n")
 				output_file_lock.release()
-				sock.sendto("SessionNumber1,"+str(message_object['client_num'])+",get,"+str(message_object['var'])+","+str(int(time.time())) +",req,", (IP, PORT))
-				#client_requests.append((data_str_split), client_id)
-				time.sleep(random.randrange(min_delay, max_delay))
-				sequencer_socket.sendall(data_serialized)
-				#print("Sent get req to sequencer")
-			
-			#dump request
-			elif(data_str_split['method'] == 'dump'):
-				client_connections[client_id].sendall("a")
-				print(value_dict)
-
-		elif('sequence_number' in data_str_split):
-			#Sequencer finished multicasting so tell client that done
-			#print(data_str_split['sequence_number'])
-			if(data_str_split['request_status'] == "Sequencer finished"):
+				sock.sendto("SessionNumber1,"+str(data_str_split['client_num'])+",put,"+str(data_str_split['var'])+","+str(int(time.time())) +",resp,"+ str(data_str_split['value']), (IP, PORT))
+				client_connections[data_str_split['client_id']].sendall("a")
+			elif(data_str_split['method'] == "get"):
+				output_file_lock.acquire()
+				output_file.write("SessionNumber1,"+str(data_str_split['client_id'])+",get,"+str(data_str_split['var'])+","+str(int(time.time())) +",resp,"+ str(data_str_split['got_value']) + "\n")
+				output_file_lock.release()
+				sock.sendto("SessionNumber1,"+str(data_str_split['client_num'])+",get,"+str(data_str_split['var'])+","+str(int(time.time())) +",resp,"+ str(data_str_split['got_value']), (IP, PORT))
+				client_connections[data_str_split['client_id']].sendall(str(data_str_split['got_value']))
+		
+		elif(data_str_split['request_status'] == "multicasting to replicas"):
+			if(int(data_str_split['sequence_number']) == (int(sequence_number) + 1)):
 				if(data_str_split['method'] == "put"):
-					output_file_lock.acquire()
-					output_file.write("SessionNumber1,"+str(data_str_split['client_num'])+",put,"+str(data_str_split['var'])+","+str(int(time.time())) +",resp,"+ str(data_str_split['value']) + "\n")
-					output_file_lock.release()
-					sock.sendto("SessionNumber1,"+str(data_str_split['client_num'])+",put,"+str(data_str_split['var'])+","+str(int(time.time())) +",resp,"+ str(data_str_split['value']), (IP, PORT))
-					client_connections[data_str_split['client_id']].sendall("a")
-				elif(data_str_split['method'] == "get"):
-					output_file_lock.acquire()
-					output_file.write("SessionNumber1,"+str(data_str_split['client_num'])+",get,"+str(data_str_split['var'])+","+str(int(time.time())) +",resp,"+ str(data_str_split['got_value']) + "\n")
-					output_file_lock.release()
-					sock.sendto("SessionNumber1,"+str(data_str_split['client_num'])+",get,"+str(data_str_split['var'])+","+str(int(time.time())) +",resp,"+ str(data_str_split['got_value']), (IP, PORT))
-					client_connections[data_str_split['client_id']].sendall(str(data_str_split['got_value']))
-			
-			elif(data_str_split['request_status'] == "multicasting to replicas"):
-				if(int(data_str_split['sequence_number']) == (int(sequence_number) + 1)):
-					if(data_str_split['method'] == "put"):
-						seq = data_str_split['sequence_number']
-						#print("Put - " + data_str_split['request_status'] + " - " + str(seq))
-						#Update the value in the dictionary for that variable
-						variable = data_str_split['var']
-						value = data_str_split['value']
-						value_dict[variable] = value
+					seq = data_str_split['sequence_number']
+					#print("Put - " + data_str_split['request_status'] + " - " + str(seq))
+					#Update the value in the dictionary for that variable
+					variable = data_str_split['var']
+					value = data_str_split['value']
+					value_dict[variable] = value
 
-						#Send an ack back to sequencer acknowledging variable has been updated for this 
-						data_str_split['request_status'] = "Ack to sequencer"
-						data_serialized = pickle.dumps(data_str_split, -1)
-						time.sleep(random.randrange(min_delay, max_delay))
-						sequencer_socket.sendall(data_serialized)
-						#print("Put - Sent Ack back to Sequencer - " + str(seq))
-					
-					elif(data_str_split['method'] == "get"):
-						seq = data_str_split['sequence_number']
-						#Send an ack back to sequencer acknowledging variable has been updated for this
-						#print("Get - " + data_str_split['request_status'] + " - " + str(seq))
-						variable = data_str_split['var']
-						value = 0
-						if(variable in value_dict):
-							value = value_dict[variable]
-						data_str_split['got_value'] = value
-						data_str_split['request_status'] = "Ack to sequencer"
-						data_serialized = pickle.dumps(data_str_split, -1)
-						time.sleep(random.randrange(min_delay, max_delay))
-						sequencer_socket.sendall(data_serialized)
-						#print("Get - Sent Ack back to Sequencer - " + str(seq))
-					sequence_number = int(sequence_number) + 1
-					print(sequence_number)
-					if(hold_back_queue.empty() == False):
-						temp_thread = Thread(target=checkHoldBackQueue, args = (sequencer_socket, ))
-						temp_thread.daemon = True
-						temp_thread.start()
-				elif(int(data_str_split['sequence_number']) > (int(sequence_number) + 1)):
-					print("Putting into hold back queue" + str(data_str_split['sequence_number']))
-					hold_back_queue.put((data_str_split['sequence_number'],data_str_split))
+					#Send an ack back to sequencer acknowledging variable has been updated for this 
+					data_str_split['request_status'] = "Ack to sequencer"
+					data_serialized = pickle.dumps(data_str_split, -1)
+					time.sleep(random.randrange(min_delay, max_delay))
+					sequencer_socket.sendall(data_serialized)
+					#print("Put - Sent Ack back to Sequencer - " + str(seq))
+				
+				elif(data_str_split['method'] == "get"):
+					seq = data_str_split['sequence_number']
+					#Send an ack back to sequencer acknowledging variable has been updated for this
+					#print("Get - " + data_str_split['request_status'] + " - " + str(seq))
+					variable = data_str_split['var']
+					value = 0
+					if(variable in value_dict):
+						value = value_dict[variable]
+					data_str_split['got_value'] = value
+					data_str_split['request_status'] = "Ack to sequencer"
+					data_serialized = pickle.dumps(data_str_split, -1)
+					time.sleep(random.randrange(min_delay, max_delay))
+					sequencer_socket.sendall(data_serialized)
+					#print("Get - Sent Ack back to Sequencer - " + str(seq))
+				sequence_number = int(sequence_number) + 1
+				print(sequence_number)
+				if(hold_back_queue.empty() == False):
+					temp_thread = Thread(target=checkHoldBackQueue, args = (sequencer_socket, ))
+					temp_thread.daemon = True
+					temp_thread.start()
+			elif(int(data_str_split['sequence_number']) > (int(sequence_number) + 1)):
+				print("Putting into hold back queue" + str(data_str_split['sequence_number']))
+				hold_back_queue.put((data_str_split['sequence_number'],data_str_split))
 
 '''
 Check the hold back queue for items whenever a message from the buffer should be removed
