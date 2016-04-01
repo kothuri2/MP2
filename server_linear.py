@@ -7,12 +7,14 @@ import mutex
 import pickle
 import Queue as Q
 import sequencer
+import signal
 from threading import Lock, Thread
 
 value_dict = {}
 client_requests = []
 client_connections = {}
 hold_back_queue = Q.PriorityQueue()
+output_file_lock = Lock()
 
 def main(argv):
 	global sequence_number, output_file
@@ -40,6 +42,8 @@ def main(argv):
 		if(argv[1] in process):
 			found_process = process
 
+	output_file = open("output_log" + str(found_process[0]) + ".txt", "w")
+	
 	try:
 		#server and client
 		t3 = Thread(target=create_server, args = (sock, min_delay, max_delay, processes, found_process[1], int(found_process[2]), found_process[0], len(processes), sequencer_socket))
@@ -71,6 +75,11 @@ def parse_file(file_name):
 
 	return (processes, int(min_delay), int(max_delay))
 
+def signal_handler(signal, frame):
+	global output_file
+	output_file.close()
+	sys.exit(0)
+
 '''
 Accepts front-end client connections
 '''
@@ -96,8 +105,9 @@ def create_server(sock, min_delay, max_delay, processes, host, port, process_id,
 
 #Each thread is for a different process.
 def read_server(sock, conn,sequencer_socket, host, port, process_id, client_id):
-	global sequence_number, min_delay, max_delay, IP, PORT
+	global sequence_number, min_delay, max_delay, IP, PORT, output_file
 	while True:
+		print("HERE")
 		data = conn.recv(1024)
 		data_str_split = pickle.loads(data)
 		#Put Request from front-end client
@@ -117,6 +127,9 @@ def read_server(sock, conn,sequencer_socket, host, port, process_id, client_id):
 				'request_status' : "sent to sequencer"
 				}
 				data_serialized = pickle.dumps(message_object, -1)
+				output_file_lock.acquire()
+				output_file.write("SessionNumber1,"+str(message_object['client_num'])+",put,"+str(message_object['var'])+ "," +str(int(time.time())) +",req,"+ str(message_object['value']) + "\n")
+				output_file_lock.release()
 				sock.sendto("SessionNumber1,"+str(message_object['client_num'])+",put,"+str(message_object['var'])+ "," +str(int(time.time())) +",req,"+ str(message_object['value']), (IP, PORT))
 				#client_requests.append((data_str_split, client_id))
 				time.sleep(random.randrange(min_delay, max_delay))
@@ -137,6 +150,9 @@ def read_server(sock, conn,sequencer_socket, host, port, process_id, client_id):
 				'request_status' : "sent to sequencer"
 				}
 				data_serialized = pickle.dumps(message_object, -1)
+				output_file_lock.acquire()
+				output_file.write("SessionNumber1,"+str(message_object['client_num'])+",get,"+str(message_object['var'])+","+str(int(time.time())) +",req,\n")
+				output_file_lock.release()
 				sock.sendto("SessionNumber1,"+str(message_object['client_num'])+",get,"+str(message_object['var'])+","+str(int(time.time())) +",req,", (IP, PORT))
 				#client_requests.append((data_str_split), client_id)
 				time.sleep(random.randrange(min_delay, max_delay))
@@ -153,9 +169,15 @@ def read_server(sock, conn,sequencer_socket, host, port, process_id, client_id):
 			#print(data_str_split['sequence_number'])
 			if(data_str_split['request_status'] == "Sequencer finished"):
 				if(data_str_split['method'] == "put"):
+					output_file_lock.acquire()
+					output_file.write("SessionNumber1,"+str(data_str_split['client_num'])+",put,"+str(data_str_split['var'])+","+str(int(time.time())) +",resp,"+ str(data_str_split['value']) + "\n")
+					output_file_lock.release()
 					sock.sendto("SessionNumber1,"+str(data_str_split['client_num'])+",put,"+str(data_str_split['var'])+","+str(int(time.time())) +",resp,"+ str(data_str_split['value']), (IP, PORT))
 					client_connections[data_str_split['client_id']].sendall("a")
 				elif(data_str_split['method'] == "get"):
+					output_file_lock.acquire()
+					output_file.write("SessionNumber1,"+str(data_str_split['client_num'])+",get,"+str(data_str_split['var'])+","+str(int(time.time())) +",resp,"+ str(data_str_split['got_value']) + "\n")
+					output_file_lock.release()
 					sock.sendto("SessionNumber1,"+str(data_str_split['client_num'])+",get,"+str(data_str_split['var'])+","+str(int(time.time())) +",resp,"+ str(data_str_split['got_value']), (IP, PORT))
 					client_connections[data_str_split['client_id']].sendall(str(data_str_split['got_value']))
 			
@@ -251,5 +273,6 @@ def checkHoldBackQueue(sequencer_socket):
 		hold_back_queue.task_done()
 
 if __name__ == "__main__":
+	signal.signal(signal.SIGINT, signal_handler)
 	main(sys.argv[1:])
 
