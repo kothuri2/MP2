@@ -84,6 +84,7 @@ def create_server(sock, min_delay, max_delay, processes, host, port, process_id,
 	client_id = 0
 	while True:
 		conn, addr = s.accept()
+		print("Connected by " +  str(addr))
 		client_connections[client_id] = conn
 		read_thread = Thread(target = read_server, args= (sock, conn, sequencer_socket, host, port, process_id, client_id))
 		read_thread.daemon = True
@@ -101,6 +102,7 @@ def read_server(sock, conn,sequencer_socket, host, port, process_id, client_id):
 		data_str_split = pickle.loads(data)
 		#Put Request from front-end client
 		#Send this request to sequencer
+		print(data_str_split)
 		if('sequence_number' not in data_str_split):
 			if(data_str_split['method'] == 'put'):
 				message_object = {
@@ -119,7 +121,7 @@ def read_server(sock, conn,sequencer_socket, host, port, process_id, client_id):
 				#client_requests.append((data_str_split, client_id))
 				time.sleep(random.randrange(min_delay, max_delay))
 				sequencer_socket.sendall(data_serialized)
-				print("Sent put req to sequencer")
+				#print("Sent put req to sequencer")
 
 			#Get Request from front-end client
 			#Send this request to sequencer
@@ -139,7 +141,7 @@ def read_server(sock, conn,sequencer_socket, host, port, process_id, client_id):
 				#client_requests.append((data_str_split), client_id)
 				time.sleep(random.randrange(min_delay, max_delay))
 				sequencer_socket.sendall(data_serialized)
-				print("Sent get req to sequencer")
+				#print("Sent get req to sequencer")
 			
 			#dump request
 			elif(data_str_split['method'] == 'dump'):
@@ -148,7 +150,7 @@ def read_server(sock, conn,sequencer_socket, host, port, process_id, client_id):
 
 		elif('sequence_number' in data_str_split):
 			#Sequencer finished multicasting so tell client that done
-			print(data_str_split['sequence_number'])
+			#print(data_str_split['sequence_number'])
 			if(data_str_split['request_status'] == "Sequencer finished"):
 				if(data_str_split['method'] == "put"):
 					sock.sendto("SessionNumber1,"+str(data_str_split['client_num'])+",put,"+str(data_str_split['var'])+","+str(int(time.time())) +",resp,"+ str(data_str_split['value']), (IP, PORT))
@@ -161,7 +163,7 @@ def read_server(sock, conn,sequencer_socket, host, port, process_id, client_id):
 				if(int(data_str_split['sequence_number']) == (int(sequence_number) + 1)):
 					if(data_str_split['method'] == "put"):
 						seq = data_str_split['sequence_number']
-						print("Put - " + data_str_split['request_status'] + " - " + str(seq))
+						#print("Put - " + data_str_split['request_status'] + " - " + str(seq))
 						#Update the value in the dictionary for that variable
 						variable = data_str_split['var']
 						value = data_str_split['value']
@@ -172,12 +174,12 @@ def read_server(sock, conn,sequencer_socket, host, port, process_id, client_id):
 						data_serialized = pickle.dumps(data_str_split, -1)
 						time.sleep(random.randrange(min_delay, max_delay))
 						sequencer_socket.sendall(data_serialized)
-						print("Put - Sent Ack back to Sequencer - " + str(seq))
+						#print("Put - Sent Ack back to Sequencer - " + str(seq))
 					
 					elif(data_str_split['method'] == "get"):
 						seq = data_str_split['sequence_number']
 						#Send an ack back to sequencer acknowledging variable has been updated for this
-						print("Get - " + data_str_split['request_status'] + " - " + str(seq))
+						#print("Get - " + data_str_split['request_status'] + " - " + str(seq))
 						variable = data_str_split['var']
 						value = 0
 						if(variable in value_dict):
@@ -187,15 +189,15 @@ def read_server(sock, conn,sequencer_socket, host, port, process_id, client_id):
 						data_serialized = pickle.dumps(data_str_split, -1)
 						time.sleep(random.randrange(min_delay, max_delay))
 						sequencer_socket.sendall(data_serialized)
-						print("Get - Sent Ack back to Sequencer - " + str(seq))
-					sequence_number = sequence_number + 1
+						#print("Get - Sent Ack back to Sequencer - " + str(seq))
+					sequence_number = int(sequence_number) + 1
 					print(sequence_number)
 					if(hold_back_queue.empty() == False):
 						temp_thread = Thread(target=checkHoldBackQueue, args = (sequencer_socket, ))
 						temp_thread.daemon = True
 						temp_thread.start()
-				elif(data_str_split['sequence_number'] > (sequence_number + 1)):
-					print("Putting into hold back queue")
+				elif(int(data_str_split['sequence_number']) > (int(sequence_number) + 1)):
+					print("Putting into hold back queue" + str(data_str_split['sequence_number']))
 					hold_back_queue.put((data_str_split['sequence_number'],data_str_split))
 
 '''
