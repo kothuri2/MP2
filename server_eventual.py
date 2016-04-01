@@ -192,6 +192,8 @@ def read_server(min_delay, max_delay, W, R, conn, client_id, server_id, client_c
                         #print request[2]
                         request[2] -= 1 #decrement W/R
                         if(data_str_split['method'] == "get" or data_str_split['method'] == "put"):
+                            #print data_str_split
+                            #print request[0]
                             if('value' not in request[0] or data_str_split['other_vals'][1] > request[0]['value'][1]):
                                 request[0]['value'] = data_str_split['other_vals']
                             elif(data_str_split['other_vals'][1] == request[0]['value'][1] and data_str_split['other_vals'][2] > request[0]['value'][2]):
