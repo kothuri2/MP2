@@ -104,12 +104,15 @@ def read_server(server_id):
     global go
     global processes
     while True:
-        buffer = s.recv(128)
+        try:
+            buffer = s.recv(128)
+        except:
+            break
         if(buffer == "a"):
             print "Acknowledged" # Acknowledges dumps and puts
         elif(buffer == "Q"):
             s = None
-            while s == None:
+            while s == None and processes:
                 if(processes[len(processes)-1][0] == server_id):
                     process = processes[0]
                 else:
@@ -123,8 +126,9 @@ def read_server(server_id):
                     s.connect((process[1], int(process[2])))
                 except:
                     s = None
-                    processes.remove(process)
-        else:
+                    if(process in processes):
+                        processes.remove(process)
+        elif len(buffer) > 0:
             print "Value = " + buffer # Prints the value after a get operation was sent
         go = 1
 

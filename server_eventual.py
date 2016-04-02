@@ -28,22 +28,31 @@ server replica decrements W for 1px3 until the value is 0, at which point it rem
 server replica sends client an acknlowedgement
 client prints "Acknowledged" (done)
 client opens up for next input (done)
-
-
-DEAL WITH CRASHED SERVERS 
 '''
 value_dict = {}
 client_requests = []
 client_sockets = {}
+write_file = Lock()
 
 def main(config, server_id, W, R):
     global found_process
     global processes
+    global f
+    global sock, IP, PORT
+    global file_name
+    file_name = "output_log" + str(server_id) + ".txt"
+    f = open("output_log" + str(server_id) + ".txt", 'w')
     parsed_file = parse_file(config)
     processes = parsed_file[0]
     min_delay = float(parsed_file[1]/1000)
     max_delay = float(parsed_file[2]/1000)
     found_process = -1
+
+    #VISUALIZATION SOCKET
+    IP = "127.0.0.1"
+    PORT = 1234
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.sendto("START,SessionNumber1", (IP, PORT))
 
     for process in processes:
         if(server_id in process):
@@ -111,6 +120,8 @@ def create_server(W, R, min_delay, max_delay, processes, host, port, process_id,
 def read_server(min_delay, max_delay, W, R, conn, client_id, server_id, client_connections):
     global start
     global processes
+    global f
+
     while True:
         ignore = 0
         #print "start: " + str(start)
@@ -127,13 +138,19 @@ def read_server(min_delay, max_delay, W, R, conn, client_id, server_id, client_c
         #print data
         if(ignore == 0):
             data_str_split = pickle.loads(data)
-
         #print data_str_split
         
         data_serialized = -1
         #Put Request from front-end client
         #Send this request to sequencer 
         if(ignore == 0 and 'from_server' not in data_str_split):
+            if(data_str_split['method'] == "get"):
+                f.write("10," + (str)(data_str_split['client_num']) + ",get," + str(data_str_split['var']) + "," + str(int(time.time() * 1000)) + "," + "req" + "," + '\n')
+                f.flush()
+            elif(len(data_str_split['value']) == 1 and data_str_split['method'] == "put"):
+                f.write("10," + (str)(data_str_split['client_num']) + ",put," + str(data_str_split['var']) + "," + str(int(time.time() * 1000)) + "," + "req" + "," + str(data_str_split['value']) + '\n')
+                f.flush()
+
             if(data_str_split['method'] == 'put'):
                 if(data_str_split['var'] in value_dict):
                     #print data_str_split['value']
@@ -146,13 +163,19 @@ def read_server(min_delay, max_delay, W, R, conn, client_id, server_id, client_c
                 'method': "put",
                 'var' : data_str_split['var'],
                 'value' : data_str_split['value'],
-                'server_id' : server_id
+                'server_id' : server_id,
+                'client_id' : client_id,
+                'client_num' : data_str_split['client_num']
                 }
                 data_serialized = pickle.dumps(message_object, -1)
                 client_requests.append([(data_str_split), client_id, W])
                 if(W == 0):
                     #print "this?"
                     value_dict[data_str_split['var']] = data_str_split['value']
+                    write_file.acquire()
+                    f.write("10," + (str)(data_str_split['client_num']) + ",put," + str(data_str_split['var']) + "," + str(int(time.time() * 1000)) + "," + "resp" + "," + str(data_str_split['value'][0]) + '\n')
+                    f.flush()
+                    write_file.release()
                     client_connections[client_id].sendall("a")
 
             #Get Request from front-end client
@@ -162,15 +185,25 @@ def read_server(min_delay, max_delay, W, R, conn, client_id, server_id, client_c
                 'from_server' : True,
                 'method': "get",
                 'var' : data_str_split['var'],
-                'server_id' : server_id
+                'server_id' : server_id,
+                'client_id' : client_id,
+                'client_num' : data_str_split['client_num']
                 }
                 data_serialized = pickle.dumps(message_object, -1)
                 client_requests.append([(data_str_split), client_id, R])
                 if(R == 0):
                     if data_str_split['var'] in value_dict:
                         #print value_dict[data_str_split['var']]
+                        write_file.acquire()
+                        f.write("10," + (str)(data_str_split['client_num']) + ",get," + str(data_str_split['var']) + "," + str(int(time.time() * 1000)) + "," + "resp" + "," + str(value_dict[data_str_split['var']][0]) + '\n')
+                        f.flush()
+                        write_file.release()
                         client_connections[client_id].sendall(value_dict[data_str_split['var']][0])
                     else:
+                        write_file.acquire()
+                        f.write("10," + (str)(data_str_split['client_num']) + ",get," + str(data_str_split['var']) + "," + str(int(time.time() * 1000)) + "," + "resp" + ",-1" + '\n')
+                        f.flush()
+                        write_file.release()
                         client_connections[client_id].sendall('-1')
             
             #dump request
@@ -210,8 +243,16 @@ def read_server(min_delay, max_delay, W, R, conn, client_id, server_id, client_c
                                 #print value_dict[request[0]['var']]
                                 value_dict[request[0]['var']] = request[0]['value']
                                 #print value_dict[request[0]['var']]
+                                write_file.acquire()
+                                f.write("10," + (str)(data_str_split['client_num']) + ",put," + str(data_str_split['var']) + "," + str(int(time.time() * 1000)) + "," + "resp" + "," + str(request[0]['value'][0]) + '\n')
+                                f.flush()
+                                write_file.release()
                                 client_connections[request[1]].sendall("a") # send the client acknowledgement of put finishing
                             elif(data_str_split['method'] == "get"):
+                                write_file.acquire()
+                                f.write("10," + (str)(data_str_split['client_num']) + ",get," + str(data_str_split['var']) + "," + str(int(time.time() * 1000)) + "," + "resp" + "," + str(request[0]['value'][0]) + '\n')
+                                f.flush()
+                                write_file.release()
                                 client_connections[request[1]].sendall(request[0]['value'][0]) # send the client the most recent value
                             client_requests.remove(request)
             
@@ -240,7 +281,6 @@ def read_server(min_delay, max_delay, W, R, conn, client_id, server_id, client_c
                 data_serialized = pickle.dumps(data_str_split, -1)
                 time.sleep(random.randrange(min_delay, max_delay))
                 client_sockets[data_str_split['server_id']].sendall(data_serialized)
-                
         #print "end"
 
 def send_message(min_delay, max_delay, data_serialized, socket):
@@ -265,8 +305,18 @@ def create_connections():
     #print "exit"
 
 def signal_handler(signal, frame):
+    global sock, IP, PORT, file_name, f
+    f.close()
+    f = open(file_name, 'r')
+    for line in f:
+        line = line[2:]
+        line = "SessionNumber1" + line
+        print line
+        sock.sendto(line, (IP,PORT))
+    f.close()
     for client in client_connections:
         client_connections[client].sendall("Q")
+        client_connections[client].close()
     sys.exit(0)
 
 if __name__ == "__main__":
