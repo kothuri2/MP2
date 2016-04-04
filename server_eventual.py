@@ -60,7 +60,7 @@ def main(config, server_id, W, R):
 
     try:
         #server and client
-        server_thread = Thread(target=create_server, args = (int(W), int(R), min_delay, max_delay, processes, found_process[1], int(found_process[2]), found_process[0], len(processes)))
+        server_thread = Thread(target=create_server, args = (IP, PORT, sock, int(W), int(R), min_delay, max_delay, processes, found_process[1], int(found_process[2]), found_process[0], len(processes)))
         server_thread.daemon = True
         server_thread.start()
 
@@ -92,7 +92,7 @@ def parse_file(file_name):
 '''
 Accepts front-end client connections
 '''
-def create_server(W, R, min_delay, max_delay, processes, host, port, process_id, num_processes):
+def create_server(IP, PORT, sock, W, R, min_delay, max_delay, processes, host, port, process_id, num_processes):
     global client_connections
     client_connections = {}
 
@@ -107,7 +107,7 @@ def create_server(W, R, min_delay, max_delay, processes, host, port, process_id,
         conn, addr = s.accept()
         client_connections[client_id] = conn
         #print("client_id: " + (str)(client_id))
-        read_thread = Thread(target = read_server, args= (min_delay, max_delay, W, R, conn, client_id, process_id, client_connections))
+        read_thread = Thread(target = read_server, args= (IP, PORT, sock, min_delay, max_delay, W, R, conn, client_id, process_id, client_connections))
         read_thread.daemon = True
         read_thread.start()
         client_id += 1
@@ -117,7 +117,7 @@ def create_server(W, R, min_delay, max_delay, processes, host, port, process_id,
 
 
 #Each thread is for a different process.
-def read_server(min_delay, max_delay, W, R, conn, client_id, server_id, client_connections):
+def read_server(IP, PORT, sock, min_delay, max_delay, W, R, conn, client_id, server_id, client_connections):
     global start
     global processes
     global f
@@ -138,7 +138,7 @@ def read_server(min_delay, max_delay, W, R, conn, client_id, server_id, client_c
         #print data
         if(ignore == 0):
             data_str_split = pickle.loads(data)
-        #print data_str_split
+            print data_str_split
         
         data_serialized = -1
         #Put Request from front-end client
@@ -146,10 +146,12 @@ def read_server(min_delay, max_delay, W, R, conn, client_id, server_id, client_c
         if(ignore == 0 and 'from_server' not in data_str_split):
             if(data_str_split['method'] == "get"):
                 f.write("10," + (str)(data_str_split['client_num']) + ",get," + str(data_str_split['var']) + "," + str(int(time.time() * 1000)) + "," + "req" + "," + '\n')
-                f.flush()
-            elif(len(data_str_split['value']) == 1 and data_str_split['method'] == "put"):
+                #f.flush()
+                sock.sendto("SessionNumber1," + (str)(data_str_split['client_num']) + ",get," + str(data_str_split['var']) + "," + str(int(time.time() * 1000)) + "," + "req" + "," + '\n', (IP, PORT))
+            elif(data_str_split['method'] == "put" and len(data_str_split['value']) == 1):
                 f.write("10," + (str)(data_str_split['client_num']) + ",put," + str(data_str_split['var']) + "," + str(int(time.time() * 1000)) + "," + "req" + "," + str(data_str_split['value']) + '\n')
-                f.flush()
+                #f.flush()
+                sock.sendto("SessionNumber1," + (str)(data_str_split['client_num']) + ",put," + str(data_str_split['var']) + "," + str(int(time.time() * 1000)) + "," + "req" + "," + str(data_str_split['value']) + '\n', (IP, PORT))
 
             if(data_str_split['method'] == 'put'):
                 if(data_str_split['var'] in value_dict):
@@ -174,7 +176,8 @@ def read_server(min_delay, max_delay, W, R, conn, client_id, server_id, client_c
                     value_dict[data_str_split['var']] = data_str_split['value']
                     write_file.acquire()
                     f.write("10," + (str)(data_str_split['client_num']) + ",put," + str(data_str_split['var']) + "," + str(int(time.time() * 1000)) + "," + "resp" + "," + str(data_str_split['value'][0]) + '\n')
-                    f.flush()
+                    #f.flush()
+                    sock.sendto("SessionNumber1," + (str)(data_str_split['client_num']) + ",put," + str(data_str_split['var']) + "," + str(int(time.time() * 1000)) + "," + "resp" + "," + str(data_str_split['value'][0]) + '\n', (IP, PORT))
                     write_file.release()
                     client_connections[client_id].sendall("a")
 
@@ -196,13 +199,15 @@ def read_server(min_delay, max_delay, W, R, conn, client_id, server_id, client_c
                         #print value_dict[data_str_split['var']]
                         write_file.acquire()
                         f.write("10," + (str)(data_str_split['client_num']) + ",get," + str(data_str_split['var']) + "," + str(int(time.time() * 1000)) + "," + "resp" + "," + str(value_dict[data_str_split['var']][0]) + '\n')
-                        f.flush()
+                        #f.flush()
+                        sock.sendto("SessionNumber1," + (str)(data_str_split['client_num']) + ",get," + str(data_str_split['var']) + "," + str(int(time.time() * 1000)) + "," + "resp" + "," + str(value_dict[data_str_split['var']][0]) + '\n', (IP, PORT))
                         write_file.release()
                         client_connections[client_id].sendall(value_dict[data_str_split['var']][0])
                     else:
                         write_file.acquire()
                         f.write("10," + (str)(data_str_split['client_num']) + ",get," + str(data_str_split['var']) + "," + str(int(time.time() * 1000)) + "," + "resp" + ",-1" + '\n')
-                        f.flush()
+                        #f.flush()
+                        sock.sendto("SessionNumber1," + (str)(data_str_split['client_num']) + ",get," + str(data_str_split['var']) + "," + str(int(time.time() * 1000)) + "," + "resp" + ",-1" + '\n', (IP, PORT))
                         write_file.release()
                         client_connections[client_id].sendall('-1')
             
@@ -225,9 +230,13 @@ def read_server(min_delay, max_delay, W, R, conn, client_id, server_id, client_c
                         #print request[2]
                         request[2] -= 1 #decrement W/R
                         if(data_str_split['method'] == "get" or data_str_split['method'] == "put"):
+                            #print "------DATA SPLIT------"
                             #print data_str_split
+                            #print "------REQUEST------"
                             #print request[0]
                             if('value' not in request[0] or data_str_split['other_vals'][1] > request[0]['value'][1]):
+                                request[0]['value'] = data_str_split['other_vals']
+                            elif(data_str_split['other_vals'][1] == -1):
                                 request[0]['value'] = data_str_split['other_vals']
                             elif(data_str_split['other_vals'][1] == request[0]['value'][1] and data_str_split['other_vals'][2] > request[0]['value'][2]):
                                 request[0]['value'] = data_str_split['other_vals']
@@ -245,16 +254,22 @@ def read_server(min_delay, max_delay, W, R, conn, client_id, server_id, client_c
                                 #print value_dict[request[0]['var']]
                                 write_file.acquire()
                                 f.write("10," + (str)(data_str_split['client_num']) + ",put," + str(data_str_split['var']) + "," + str(int(time.time() * 1000)) + "," + "resp" + "," + str(request[0]['value'][0]) + '\n')
-                                f.flush()
+                                #f.flush()
+                                sock.sendto("SessionNumber1," + (str)(data_str_split['client_num']) + ",put," + str(data_str_split['var']) + "," + str(int(time.time() * 1000)) + "," + "resp" + "," + str(request[0]['value'][0]) + '\n', (IP, PORT))
                                 write_file.release()
                                 client_connections[request[1]].sendall("a") # send the client acknowledgement of put finishing
                             elif(data_str_split['method'] == "get"):
                                 write_file.acquire()
                                 f.write("10," + (str)(data_str_split['client_num']) + ",get," + str(data_str_split['var']) + "," + str(int(time.time() * 1000)) + "," + "resp" + "," + str(request[0]['value'][0]) + '\n')
-                                f.flush()
+                                #f.flush()
+                                sock.sendto("SessionNumber1," + (str)(data_str_split['client_num']) + ",get," + str(data_str_split['var']) + "," + str(int(time.time() * 1000)) + "," + "resp" + "," + str(request[0]['value'][0]) + '\n', (IP, PORT))
                                 write_file.release()
                                 client_connections[request[1]].sendall(request[0]['value'][0]) # send the client the most recent value
-                            client_requests.remove(request)
+                            try:
+                                client_requests.remove(request)
+                            except:
+                                print "request"
+                                print client_requests
             
             elif(data_str_split['method'] == "put"):
                 if(data_str_split['var'] not in value_dict or data_str_split['value'][1] > value_dict[data_str_split['var']][1]):
@@ -298,21 +313,13 @@ def create_connections():
             try:
                 s.connect((found_process[1], int(process[2])))
             except:
-                print("unable to connect: other process may not have been started")
+                print("unable to connect: process " + str(process[0]) + " may not have been started")
                 continue
             client_sockets[process[0]] = s
             client_socket_ids.append(int(process[0]))
     #print "exit"
 
 def signal_handler(signal, frame):
-    global sock, IP, PORT, file_name, f
-    f.close()
-    f = open(file_name, 'r')
-    for line in f:
-        line = line[2:]
-        line = "SessionNumber1" + line
-        print line
-        sock.sendto(line, (IP,PORT))
     f.close()
     for client in client_connections:
         client_connections[client].sendall("Q")

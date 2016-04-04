@@ -100,6 +100,7 @@ def read_client(client_id):
             go = 0
         #print "done"
 def read_server(server_id):
+    server_id = (int)(server_id)
     global s
     global go
     global processes
@@ -113,13 +114,17 @@ def read_server(server_id):
         elif(buffer == "Q"):
             s = None
             while s == None and processes:
-                if(processes[len(processes)-1][0] == server_id):
+                print processes
+                print server_id
+                if(int(processes[len(processes)-1][0]) == int(server_id)):
+                    server_id = 0
                     process = processes[0]
                 else:
                     for i in range(len(processes)):
                         if((int)(processes[i][0]) == (int)(server_id) + 1):
                             process = processes[i]
                             break
+                    server_id += 1
                 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                 try:
@@ -128,6 +133,9 @@ def read_server(server_id):
                     s = None
                     if(process in processes):
                         processes.remove(process)
+            if not processes:
+                print "Everything dead"
+                exit(0)
         elif len(buffer) > 0:
             print "Value = " + buffer # Prints the value after a get operation was sent
         go = 1
@@ -179,4 +187,3 @@ server replica sends client an acknlowedgement
 client prints "Acknowledged"
 client opens up for next input
 '''
-
