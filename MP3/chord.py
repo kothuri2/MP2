@@ -9,7 +9,9 @@ from threading import Thread
 '''
 KNOWN PROBLEMS:
 
-    1. Need to create initial finger tables by circling around the chord instead of initializing from the client_thread (Double Damnit Kush -_-)
+#1 IS TOP PRIORITY FIX
+
+    1. Need to create initial finger tables by circling around the chord instead of initializing from the client_thread (Damnit Kush -_-)
     2. Finger Tables not updating correctly (probably an issue with the mods as it seems to work without wrap around)
     3. Keys aren't updating correctly (predecessor ids are most likely not being passed in correctly)
         --> Determine predecessor ids at initialization rather than when updating keys
@@ -134,6 +136,10 @@ def print_from_conns(conn):
         else:
             print(data)
             go = 1
+
+'''
+The Method Below needs to be replaced and made to be done on the server side instead of client side
+'''
 
 def get_fingers(node_id, nodes): #Create node's finger table
     finger_table = {0:0, 1:0, 2:0, 3:0, 4:0, 5:0, 6:0, 7:0}
